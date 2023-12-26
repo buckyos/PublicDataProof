@@ -23,7 +23,7 @@ contract PublicDataProof {
         if(last_proof.proof_block == 0) {
             is_new_show = true;
         } else {
-            if (block.number - last_proof.proof_block > sysConfigShowTimeout){
+            if (block.number - last_proof.proof_block > sysConfigShowTimeout) {
                 //Last Show Proof successed!
                 //根据经济学模型对上一个Proof的提供者进行奖励
                 emit ProofReward(last_proof.prover,dataMixedHash);
@@ -111,10 +111,10 @@ contract PublicDataProof {
         bytes32 dataHash;
         if (hashType == 0) {
             // sha256
-            dataHash = _merkleRootWithSha256(m_path, index, bytes16(sha256(leafdata)));
+            dataHash = _merkleRootWithSha256(m_path, index, _bytes32To16(sha256(leafdata)));
         } else if (hashType == 2) {
             // keccak256
-            dataHash = _merkleRootWithKeccak256(m_path, index, bytes16(keccak256(leafdata)));
+            dataHash = _merkleRootWithKeccak256(m_path, index, _bytes32To16(keccak256(leafdata)));
         } else {
             revert("invalid hash type");
         }
@@ -154,10 +154,10 @@ contract PublicDataProof {
     function _hashLeaf(uint8 hashType,bytes memory leafdata) internal pure returns (bytes16) {
         if (hashType == 0) {
             // sha256
-            return bytes16(sha256(leafdata));
+            return _bytes32To16(sha256(leafdata));
         } else if (hashType == 2) {
             // keccak256
-            return bytes16(keccak256(leafdata));
+            return _bytes32To16(keccak256(leafdata));
         } else {
             revert("invalid hash type");
         }
@@ -173,6 +173,10 @@ contract PublicDataProof {
         }
     }
 
+    function _bytes32To16(bytes32 b) private pure returns (bytes16) {
+        return bytes16(uint128(uint256(b)));
+    }
+
     function _merkleRootWithKeccak256(bytes16[] calldata proof, uint32 leaf_index,bytes16 leaf_hash) internal pure returns (bytes32) {
         bytes16 currentHash = leaf_hash;
         bytes32 computedHash = 0;
@@ -182,7 +186,7 @@ contract PublicDataProof {
             } else {
                 computedHash = _efficientKeccak256(proof[i], currentHash);
             }
-            currentHash = bytes16(computedHash);
+            currentHash = _bytes32To16(computedHash);
             require(leaf_index >= 2, "invalid leaf_index");
             leaf_index = leaf_index / 2;
         }
@@ -201,7 +205,7 @@ contract PublicDataProof {
             } else {
                 computedHash = sha256(bytes.concat(proof[i], currentHash));
             }
-            currentHash = bytes16(computedHash);
+            currentHash = _bytes32To16(computedHash);
             require(leaf_index >= 2, "invalid leaf_index");
             leaf_index = leaf_index / 2;
         }
