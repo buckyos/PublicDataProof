@@ -1,7 +1,6 @@
-import { compareBytes, equalsBytes, checkBounds, throwError } from './ERCMerkleTreeUtil';
-import { getProof, isValidMerkleTree, makeMerkleTree, processProof } from './ERCMerkleTreeCore';
-
 import { ethers } from 'hardhat';
+import { Buffer } from "node:buffer";
+import { equalsBytes } from './ERCMerkleTreeUtil';
 
 export enum HashType {
     Sha256,
@@ -15,146 +14,83 @@ export function calcHash(buf: Uint8Array, type: HashType): Uint8Array {
     return ethers.getBytes(ret).slice(16, 32);
 }
 
-// input any data, return 16 bytes keccak256 hash
-function standardLeafHash(value: Uint8Array, type: HashType): Uint8Array {
-    return calcHash(value, type)
-}
-
-interface StandardMerkleTreeData {
-    format: 'ercmerkle-v1';
-    tree: string[];
-    values: {
-        value: Uint8Array;
-        treeIndex: number;
-    }[];
+export interface MerkleTreeData {
     type: HashType;
+    tree: string[][];
 }
 
-export class StandardMerkleTree {
-    private readonly hashLookup: { [hash: string]: number };
+export class MerkleTree {
+    private leaf_hash: Uint8Array[] = [];
+    private tree: Uint8Array[][] = [];
+    constructor(private type: HashType) {
 
-    private constructor(
-        private readonly tree: Uint8Array[],
-        private readonly values: { value: Uint8Array, treeIndex: number }[],
-        private readonly type: HashType,
-    ) {
-        this.hashLookup =
-            Object.fromEntries(values.map(({ value }, valueIndex) => [
-                ethers.hexlify(standardLeafHash(value, type)),
-                valueIndex,
-            ]));
     }
 
-    static of(values: Uint8Array[], type: HashType) {
-        const hashedValues = values
-            .map((value, valueIndex) => ({ value, valueIndex, hash: standardLeafHash(value, type) }))
-            .sort((a, b) => compareBytes(a.hash, b.hash));
+    static load(data: MerkleTreeData): MerkleTree {
+        let ret = new MerkleTree(data.type);
+        ret.tree = data.tree.map((layer) => layer.map((v) => ethers.getBytes(v)));
 
-        const tree = makeMerkleTree(hashedValues.map(v => v.hash));
+        return ret;
+    }
 
-        const indexedValues = values.map(value => ({ value, treeIndex: 0 }));
-        for (const [leafIndex, { valueIndex }] of hashedValues.entries()) {
-            indexedValues[valueIndex]!.treeIndex = tree.length - leafIndex - 1;
+    addLeaf(leaf: Uint8Array) {
+        this.leaf_hash.push(calcHash(leaf, this.type));
+    }
+
+    calcTree() {
+        let cur_layer = this.leaf_hash;
+        this.tree.push(cur_layer);
+        while (cur_layer.length > 1) {
+            let next_layer = [];
+            for (let i = 0; i < cur_layer.length; i += 2) {
+                if (i == cur_layer.length - 1) {
+                    next_layer.push(cur_layer[i]);
+                } else {
+                    next_layer.push(calcHash(new Uint8Array(Buffer.concat([cur_layer[i], cur_layer[i + 1]])), this.type));
+                }
+            }
+            cur_layer = next_layer;
+            this.tree.push(cur_layer);
+        }
+    }
+
+    getRoot(): Uint8Array {
+        return this.tree[this.tree.length - 1][0];
+    }
+
+    getPath(index: number): Uint8Array[] {
+        let ret = [];
+        for (let layer = 0; layer < this.tree.length - 1; layer++) {
+            if (index % 2 == 1) {
+                ret.push(this.tree[layer][index - 1]);
+            } else {
+                ret.push(this.tree[layer][index + 1]);
+            }
+            index = Math.floor(index / 2);
         }
 
-        return new StandardMerkleTree(tree, indexedValues, type);
+        return ret;
     }
 
-    static load(data: StandardMerkleTreeData): StandardMerkleTree {
-        if (data.format !== 'ercmerkle-v1') {
-            throw new Error(`Unknown format '${data.format}'`);
-        }
-        return new StandardMerkleTree(
-            data.tree.map((value) => ethers.getBytes(value)),
-            data.values,
-            data.type,
-        );
-    }
-
-    static verify(root: string, type: HashType, leaf: Uint8Array, proof: string[]): boolean {
-        const impliedRoot = processProof(standardLeafHash(leaf, type), proof.map((value) => ethers.getBytes(value)));
-        return equalsBytes(impliedRoot, ethers.getBytes(root));
-    }
-
-    dump(): StandardMerkleTreeData {
-        return {
-            format: 'standard-v1',
-            tree: this.tree.map(ethers.hexlify),
-            values: this.values,
+    save(): MerkleTreeData {
+        return  {
             type: this.type,
+            tree: this.tree.map((layer) => layer.map(ethers.hexlify)),
         };
     }
 
-    get root(): string {
-        return ethers.hexlify(this.tree[0]!);
-    }
-
-    *entries(): Iterable<[number, Uint8Array]> {
-        for (const [i, { value }] of this.values.entries()) {
-            yield [i, value];
-        }
-    }
-
-    validate() {
-        for (let i = 0; i < this.values.length; i++) {
-            this.validateValue(i);
-        }
-        if (!isValidMerkleTree(this.tree)) {
-            throw new Error('Merkle tree is invalid');
-        }
-    }
-
-    leafHash(leaf: Uint8Array): string {
-        return ethers.hexlify(standardLeafHash(leaf, this.type));
-    }
-
-    leafLookup(leaf: Uint8Array): number {
-        return this.hashLookup[this.leafHash(leaf)] ?? throwError('Leaf is not in tree');
-    }
-
-    getProof(leaf: number | Uint8Array): string[] {
-        // input validity
-        const valueIndex = typeof leaf === 'number' ? leaf : this.leafLookup(leaf);
-        this.validateValue(valueIndex);
-
-        // rebuild tree index and generate proof
-        const { treeIndex } = this.values[valueIndex]!;
-        const proof = getProof(this.tree, treeIndex);
-
-        // sanity check proof
-        if (!this._verify(this.tree[treeIndex]!, proof)) {
-            throw new Error('Unable to prove value');
+    verify(proof: Uint8Array[], leaf_index: number, leafdata: Uint8Array): boolean {
+        let leaf_hash = calcHash(leafdata, this.type);
+        let currentHash = leaf_hash;
+        for (let i = 0; i < proof.length; i++) {
+            if (leaf_index % 2 == 0) {
+                currentHash = calcHash(new Uint8Array(Buffer.concat([currentHash, proof[i]])), this.type);
+            } else {
+                currentHash = calcHash(new Uint8Array(Buffer.concat([proof[i], currentHash])), this.type);
+            }
+            leaf_index = Math.floor(leaf_index / 2);
         }
 
-        // return proof in hex format
-        return proof.map(ethers.hexlify);
-    }
-
-    verify(leaf: number | Uint8Array, proof: string[]): boolean {
-        return this._verify(this.getLeafHash(leaf), proof.map((value) => ethers.getBytes(value)));
-    }
-
-    private _verify(leafHash: Uint8Array, proof: Uint8Array[]): boolean {
-        const impliedRoot = processProof(leafHash, proof);
-        return equalsBytes(impliedRoot, this.tree[0]!);
-    }
-
-    private validateValue(valueIndex: number): Uint8Array {
-        checkBounds(this.values, valueIndex);
-        const { value, treeIndex } = this.values[valueIndex]!;
-        checkBounds(this.tree, treeIndex);
-        const leaf = standardLeafHash(value, this.type);
-        if (!equalsBytes(leaf, this.tree[treeIndex]!)) {
-            throw new Error('Merkle tree does not contain the expected value');
-        }
-        return leaf;
-    }
-
-    private getLeafHash(leaf: number | Uint8Array): Uint8Array {
-        if (typeof leaf === 'number') {
-            return this.validateValue(leaf);
-        } else {
-            return standardLeafHash(leaf, this.type);
-        }
+        return equalsBytes(currentHash, this.getRoot());
     }
 }
