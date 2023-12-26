@@ -29,7 +29,7 @@ contract PublicDataProof {
                 emit ProofReward(last_proof.prover,dataMixedHash);
                 last_proof.proof_block = 0;
                 is_new_show = true;
-            } 
+            }
         } 
     
         require(!is_new_show && last_proof.nonce_block_high == nonce_block_high, "nonce_block_high not match");

@@ -1,95 +1,15 @@
 import {ethers} from "hardhat"
+import { mine } from "@nomicfoundation/hardhat-network-helpers";
+
 import fs from "node:fs"
 import { HashType, MerkleTree } from "./ERCMerkleTree";
+import { compareBytes } from "./ERCMerkleTreeUtil";
 
 // 给定文件计算MixHash
 
-function testMerkleTree(leaf_num: number) {
-    let tree = new MerkleTree(HashType.Keccak256);
-    let datas = [];
-    for (let index = 0; index < leaf_num; index++) {
-        let data = ethers.randomBytes(1024);
-        datas.push(data);
-        tree.addLeaf(data);
-    }
 
-    tree.calcTree();
-    fs.writeFileSync("merkle_tree.json", JSON.stringify(tree.save()));
-    let random_leaf_index = Math.floor(Math.random() * (leaf_num-1));
-    let path = tree.getPath(random_leaf_index);
-    let ret = tree.verify(path, random_leaf_index, datas[random_leaf_index]);
-    console.log("verify ret", ret);
-}
-
-// testMerkleTree(30);
 
 let test_file_path = "C:\\TDDOWNLOAD\\MTool_8C34B84D.zip";
-
-function generateMixHash(filePath: string, type: HashType, treeStorePath: string): Uint8Array {
-    let file_op = fs.openSync(filePath, "r");
-    let length = fs.statSync(filePath).size;
-    let buf = new Uint8Array(1024);
-    let begin = 0;
-    let tree = new MerkleTree(type);
-    process.stdout.write("begin read file\n");
-    while (true) {
-        process.stdout.clearLine(0);
-        process.stdout.cursorTo(0);
-        buf.fill(0);
-        let n = fs.readSync(file_op, buf);
-        if (n == 0) {
-            break;
-        }
-        begin += n;
-        process.stdout.write(`reading file: ${begin}/${length}`);
-        tree.addLeaf(buf);
-    }
-    console.log("calcuteing tree...")
-    tree.calcTree();
-    let root_hash = tree.getRoot();
-  
-    //let full_hash =  caclRoot(leaf_hash,type)
-    new DataView(root_hash.buffer).setBigUint64(0, BigInt(length), false);
-
-    root_hash[0] &= (1 << 6) - 1;
-    switch (type) {
-        case HashType.Sha256:
-            break;
-        case HashType.Keccak256:
-            root_hash[0] |= 1 << 7;
-            break;
-        default:
-            throw new Error("unknown hash type");
-    }
-
-    fs.writeFileSync(treeStorePath, JSON.stringify(tree.save()));
-
-    return root_hash;
-}
-
-function recoverHash(filePath: string, merkle_tree_file: string): Uint8Array {
-    let length = fs.statSync(filePath).size;
-
-    let tree = MerkleTree.load(JSON.parse(fs.readFileSync(merkle_tree_file, {encoding: 'utf-8'})));
-
-    let root_hash = tree.getRoot();
-  
-    //let full_hash =  caclRoot(leaf_hash,type)
-    new DataView(root_hash.buffer).setBigUint64(0, BigInt(length), false);
-
-    root_hash[0] &= (1 << 6) - 1;
-    switch (tree.type) {
-        case HashType.Sha256:
-            break;
-        case HashType.Keccak256:
-            root_hash[0] |= 1 << 7;
-            break;
-        default:
-            throw new Error("unknown hash type");
-    }
-
-    return root_hash;
-}
 
 function getSize(mixedHashHex: string): number {
     let mixedHash = ethers.getBytes(mixedHashHex);
@@ -97,13 +17,72 @@ function getSize(mixedHashHex: string): number {
     let size = new DataView(mixedHash.buffer).getBigUint64(0, false);
 
     return Number(size);
+}
 
+// 根据nonce block high 计算存储证明（注意区分是否enable pow）
+
+async function generateProof(filepath: string, nonce_block_height: number, treeStorePath: string, enable_pow: boolean): Promise<[number, Uint8Array | undefined]> {
+    console.log("loading merkle tree");
+    let tree = MerkleTree.load(JSON.parse(fs.readFileSync(treeStorePath, {encoding: 'utf-8'})));
+
+    let length = fs.statSync(filepath).size;
+    let total_leaf_size = Math.ceil(length / 1024);
+    let nonce = ethers.getBytes((await ethers.provider.getBlock(nonce_block_height))!.hash!);
+    console.log("calc for nonce ", ethers.hexlify(nonce))
+    let file_op = fs.openSync(filepath, "r");
+
+    let min_root;
+    let min_index;
+    for (let index = 0; index < total_leaf_size; index++) {
+        process.stdout.clearLine(0);
+        process.stdout.cursorTo(0);
+        process.stdout.write(`checking index ${index+1}/${total_leaf_size}`)
+        let buf = new Uint8Array(1024);
+        buf.fill(0);
+
+        fs.readSync(file_op, buf, {position: index * 1024});
+        let path = tree.getPath(index);
+        let new_root = tree.proofByPath(path, index, new Uint8Array(Buffer.concat([buf, nonce])));
+        if (min_root == undefined) {
+            min_root = new_root;
+            min_index = index;
+        } else if (compareBytes(new_root, min_root) < 0) {
+            min_root = new_root;
+            min_index = index;
+        }
+    }
+
+    console.log("min index:", min_index);
+    let noise;
+    if (enable_pow) {
+        let buf = new Uint8Array(1024);
+        buf.fill(0);
+
+        fs.readSync(file_op, buf, {position: min_index! * 1024});
+
+        while (true) {
+            noise = ethers.randomBytes(32);
+            let path = tree.getPath(min_index!);
+            let new_root = tree.proofByPath(path, min_index!, new Uint8Array(Buffer.concat([noise, buf, nonce])));
+
+            if ((new_root[31] & (1 << 5 - 1)) == 0) {
+                break;
+            }
+        }
+    }
+
+    return [min_index!, noise];
 }
 
 //let root_hash = recoverHash(test_file_path, "mtool_merkle.json");
 //let root_hash = generateMixHash(test_file_path, HashType.Keccak256, "mtool_merkle.json");
 
-//console.log("root_hash: ", ethers.hexlify(root_hash));
-//console.log("file size:", getSize("0x800000000a6d9ffd7a8e5c956e40dea6ecb226aa0061d86513b9faff6bb15ec5"))
+async function main() {
+    await mine();
+    let number = await ethers.provider.getBlockNumber()
+    let [min_index, noise] = await generateProof(test_file_path, number, "mtool_merkle.json", false);
+    
+    console.log("min_index:", min_index, "at block", number);
+}
 
-// 根据nonce block high 计算存储证明（注意区分是否enable pow）
+main().then(() => {process.exit(0);});

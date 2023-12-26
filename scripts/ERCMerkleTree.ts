@@ -70,7 +70,7 @@ export class MerkleTree {
             if (index % 2 == 1) {
                 ret.push(this.tree[layer][index - 1]);
             } else {
-                ret.push(this.tree[layer][index + 1]);
+                ret.push(this.tree[layer][index + 1] || new Uint8Array(0));
             }
             index = Math.floor(index / 2);
         }
@@ -86,21 +86,30 @@ export class MerkleTree {
         };
     }
 
-    verify(proof: Uint8Array[], leaf_index: number, leafdata: Uint8Array): boolean {
+    proofByPath(proof: Uint8Array[], leaf_index: number, leafdata: Uint8Array): Uint8Array {
         let leaf_hash = calcHash(leafdata, this.type);
         let currentHash = leaf_hash;
         for (let i = 0; i < proof.length; i++) {
-            if (leaf_index % 2 == 0) {
-                currentHash = calcHash(new Uint8Array(Buffer.concat([currentHash, proof[i]])), this.type);
-            } else {
-                currentHash = calcHash(new Uint8Array(Buffer.concat([proof[i], currentHash])), this.type);
-            }
-            leaf_index = Math.floor(leaf_index / 2);
-            if (i < proof.length - 1) {
+            if (currentHash.length == 32) {
                 currentHash = currentHash.slice(16);
             }
+            
+            if (proof[i].length != 0) {
+                if (leaf_index % 2 == 0) {
+                    currentHash = calcHash(new Uint8Array(Buffer.concat([currentHash, proof[i]])), this.type);
+                } else {
+                    currentHash = calcHash(new Uint8Array(Buffer.concat([proof[i], currentHash])), this.type);
+                }
+            }
+            
+            leaf_index = Math.floor(leaf_index / 2);
         }
 
-        return equalsBytes(currentHash, this.getRoot());
+        return currentHash;
+    }
+
+    verify(proof: Uint8Array[], leaf_index: number, leafdata: Uint8Array): boolean {
+        let calc_root = this.proofByPath(proof, leaf_index, leafdata);
+        return equalsBytes(calc_root, this.getRoot());
     }
 }

@@ -15,5 +15,8 @@
     "hardhat": "^2.19.3",
     "hardhat-abi-exporter": "^2.10.1",
     "hardhat-gas-reporter": "^1.0.9"
+  },
+  "dependencies": {
+    "ts-node": "^10.9.2"
   }
 }
