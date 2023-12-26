@@ -1,13 +1,10 @@
-# Sample Hardhat Project
+The main goal of this project is to discuss the design and implementation of the "Public Storage Proof" design and implementation
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a script that deploys that contract.
+Public Storage Proof means a proof mechanism. The preserved data of the data can prove that it preserves a copy of a specific data by showing a small Proof of data.
 
-Try running some of the following tasks:
+This proof is a cryptography-based protocol. We hope that he can be used in various consensus structures and can become a basic agreement across multiple consensus architectures.
 
-```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat run scripts/deploy.ts
-```
+After determining the design, we will also complete the realization of the renovation project in the changing project
+
+1. Solidity (Done)
+2. BTC Script (TODO)
