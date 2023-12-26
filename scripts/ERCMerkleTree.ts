@@ -11,51 +11,57 @@ export function calcHash(buf: Uint8Array, type: HashType): Uint8Array {
     let ret = type == HashType.Sha256 ? ethers.sha256(buf) : ethers.keccak256(buf);
 
     // 取低16bytes
-    return ethers.getBytes(ret).slice(16, 32);
+    return ethers.getBytes(ret);
 }
 
 export interface MerkleTreeData {
     type: HashType;
     tree: string[][];
+    root: string;
 }
 
 export class MerkleTree {
     private leaf_hash: Uint8Array[] = [];
     private tree: Uint8Array[][] = [];
-    constructor(private type: HashType) {
+    private root: Uint8Array = new Uint8Array(32);
+    constructor(public type: HashType) {
 
     }
 
     static load(data: MerkleTreeData): MerkleTree {
         let ret = new MerkleTree(data.type);
         ret.tree = data.tree.map((layer) => layer.map((v) => ethers.getBytes(v)));
-
+        ret.root = ethers.getBytes(data.root);
         return ret;
     }
 
     addLeaf(leaf: Uint8Array) {
-        this.leaf_hash.push(calcHash(leaf, this.type));
+        this.leaf_hash.push(calcHash(leaf, this.type).slice(16));
     }
 
     calcTree() {
         let cur_layer = this.leaf_hash;
         this.tree.push(cur_layer);
+        let hash = new Uint8Array(32);
         while (cur_layer.length > 1) {
             let next_layer = [];
             for (let i = 0; i < cur_layer.length; i += 2) {
                 if (i == cur_layer.length - 1) {
                     next_layer.push(cur_layer[i]);
                 } else {
-                    next_layer.push(calcHash(new Uint8Array(Buffer.concat([cur_layer[i], cur_layer[i + 1]])), this.type));
+                    hash = calcHash(new Uint8Array(Buffer.concat([cur_layer[i], cur_layer[i + 1]])), this.type);
+                    next_layer.push(hash.slice(16));
                 }
             }
             cur_layer = next_layer;
             this.tree.push(cur_layer);
         }
+
+        this.root = hash;
     }
 
     getRoot(): Uint8Array {
-        return this.tree[this.tree.length - 1][0];
+        return this.root;
     }
 
     getPath(index: number): Uint8Array[] {
@@ -73,9 +79,10 @@ export class MerkleTree {
     }
 
     save(): MerkleTreeData {
-        return  {
+        return {
             type: this.type,
             tree: this.tree.map((layer) => layer.map(ethers.hexlify)),
+            root: ethers.hexlify(this.getRoot()),
         };
     }
 
@@ -89,6 +96,9 @@ export class MerkleTree {
                 currentHash = calcHash(new Uint8Array(Buffer.concat([proof[i], currentHash])), this.type);
             }
             leaf_index = Math.floor(leaf_index / 2);
+            if (i < proof.length - 1) {
+                currentHash = currentHash.slice(16);
+            }
         }
 
         return equalsBytes(currentHash, this.getRoot());
