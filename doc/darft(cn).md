@@ -1,48 +1,43 @@
 ---
-title: 一种支持链下数据存储证明的Hash算法 （或则存储证明）
+title: ERC-XXXX: MixHash与公共数据存储证明 
 description: 在默克尔树的根Hash上进行升级，让保存在链上的数据Hash可以通过对应的密码学流程和简单的博弈流程提高其数据的可用性和可靠性。
-author: waterflier,William,weiqiushi,sisi,
+author: Liu Zhicong(@waterflier), William Entriken (@fulldecent), Wei Qiushi (@weiqiushi),Si Changjun(@photosssa)
 discussions-to: <URL>
 status: Draft
-type: <Standards Track, Meta, or Informational>
+type: Standards Track
 category: ERC # Only required for Standards Track. Otherwise, remove this field.
 created: 2023-12-21
-requires: 721,1155 # Only required when you reference an EIP in the `Specification` section. Otherwise, remove this field.
+requires: 165, 721, 1155 # Only required when you reference an EIP in the `Specification` section. Otherwise, remove this field.
 ---
 
 
 ## Abstract
-本文提出了一种在默克尔树上做最小值选择的存储证明设计。该设计主要包含两部分
-1. 我们称作MixHash的新Hash算法，用来替代今天广泛使用的Keccak256和SHA256
-2. 公共数据存储证明。任何人都可以向一个公共的网络提交一个证明，证明自己拥有用MixHash标识的特定公共数据的副本。
+This proposal introduces a design for `minimum value selection` storage proofs on Merkle trees. The design consists of two main components:
 
-本文还讨论了在一些实际的场景下，如何应用上述设计。  
-本文还提出了对ERC721和ERC1155的一些改进建议。  
+1. A hashing algorithm termed MixHash, aimed to replace the commonly used Keccak256 and SHA256 algorithms.
+2. Public data storage proofs. This enables anyone to present a proof to a public network, verifying their possession of a copy of specific public data marked by MixHash.
 
+Additionally, the proposal discusses the practical implementation of this design in various scenarios and suggests some improvements to the ERC-721 and ERC-1155 standards.
 
 ## Motivation
-最后写，内容是存储证明的发展和迫切需要解决的问题
+待补充
 
 
 ## Specification
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in RFC 2119 and RFC 8174.
 
-在展开说明所有的设计细节之前，我们先来看一下整体的流程。
- ```mermaid
-
-```
-
 ### MixHash
-MixHash是包含了数据长度信息的数据的Merkle树根Hash值。其构成如下：
+MixHash is a Merkle tree root hash value that incorporates data length information. Its structure is as follows:
 ```
-     +-----------256 bits MixHash ----------+
+     +-----------256 bits MixHash-----------+
 High |-2-|----62----|----------192----------| Low
 
-2   bits: Hash算法选择，0b00为SHA256，0b10为Keccak256.(0b01,0b11保留)
-62  bits：文件大小。因此MixHash最大支持表达2^62-1的文件大小
-192 bits：通过指定Hash算法构造的Merkel根节点值的低192位
+2   bits: Hash algorithm selection, where 0b00 represents SHA256, and 0b10 represents Keccak256. (0b01, 0b11 are reserved)
+62  bits: File size. Hence, MixHash can support file sizes up to 2^62-1.
+192 bits: The lower 192 bits of the Merkel root node value constructed by the designated hash algorithm.
 ```
-给定一个文件，我们可以通过如下确定步骤构造出一个MixHash
+
+Given a file, we can construct a MixHash through the following defined steps:
 
 1. File MUST Split into 1KB chunks. MUST Pad zeros to the end of the last chunk if needed.
 
@@ -52,8 +47,11 @@ High |-2-|----62----|----------192----------| Low
 
 4. Return the combination of hash type, the file size, and the low 192 bits of the Merkle tree root node hash.
 
-MixHash的长度依旧为256Bits,因此使用MixHash替代被广泛使用的Kaekk256和SHA256，没有任何额外的成本。在高62bits包含了文件的长度虽然在安全性上有一定的损失，但192bits的Hash长度在防御Hash碰撞已经完全足够了。
+MixHash retains a length of 256 bits, so replacing the widely used Keccak256 and SHA256 with MixHash incurs no additional cost. Although including the file length in the upper 62 bits compromises security to some extent, the 192-bit hash length is already sufficient for defending against hash collisions.
 
+```
+补充伪代码
+```
 
 ### 公共数据存储证明
 当我们用MixHash来标识一个公共数据之后，任何人都可以通过构造一个存储证明来证明自己拥有该数据的副本。下面是一个典型的使用公共数据存储证明的流程：
@@ -122,12 +120,12 @@ function verifyDataProof(mixHash, blockHeight, m_index, m_path, m_leaf_data) {
 1. 限时回答：Supplier需要在指定的时间内提交存储证明。以太坊作为一个典型的公共网络，其出块时间为15秒左右，一个典型的限定区块间隔可以是2（MAX_BLOCK_DISTANCE = 2），这意味着Supplier必须在30秒以内完成存储证明的构造和提交。这个时间对于大部分的数据源来说是不够的完成传输的。因此，Supplier必须在本地保存数据，才能有机会在指定时间内构造存储证明。
 2. 经济学博弈：基于公共数据存储证明的经济学模型通常给首个提交正确存储证明的Supplier奖励，这意味着从博弈的角度来说，使用外部数据源构造存储证明带来的固有延迟会减低提交存储证明的成功率，在经济上不如在本地保存数据的预期收益大。经济学模型会推动Supplier在本地保存数据。
 
-### 防御外部数据源攻击的成功率
+#### 防御外部数据源攻击的成功率
 使用区块间隔+首此提交优先的策略来防御外部数据源攻击在很多时候都是一个有效的策略。其有效的核心在于从本地读取文件的速度与从网络获取文件的速度之间的差异。我们可以通过下面的公式来定义防御外部数据源攻击的成功率R：
 ```
 R = (TNetwork - TLocal) / AvgProofTime
 ```
-AvgProofTime越大，义防御外部数据源攻击的成功率越低。目前对AvgProofTime影响最大的因素是平均上链时间。比如对BTC网络来说，2个区块的时间大概为20分钟。在这么大的AvgProofTime情况下，我们可以引入能动态调整难度的PoW机制来进一步防御外部数据源攻击。让上述公式变成：
+AvgProofTime越大，防御外部数据源攻击的成功率越低。目前对AvgProofTime影响最大的因素是平均上链时间。比如对BTC网络来说，2个区块的时间大概为20分钟。在这么大的AvgProofTime情况下，我们可以引入能动态调整难度的PoW机制来进一步防御外部数据源攻击。让上述公式变成：
 ```
 R = (TNetwork - TLocal) / (AvgProofTime-AvgPoWTime)
 ```
@@ -139,7 +137,8 @@ R = (TNetwork - TLocal) / (AvgProofTime-AvgPoWTime)
 ```
 根据上述修改调整后的伪代码如下：
 ```
-function generateProofwithPow(mixHash, blockHeight,file) {
+POW_DIFFICULTY = 16;
+function generateProofwithPoW(mixHash, blockHeight,file) {
     nonce = getNonce(blockHeight);
     hash_type = getHashType(mixHash);
     chunk_hash_array = getChunkHashArray(file,hash_type);
@@ -163,7 +162,7 @@ function generateProofwithPow(mixHash, blockHeight,file) {
         }
         m_index ++;
       }
-      if(min_merkle_tree_root.last_bits() >= POW_DIFFICULTY) {
+      if(last_zero_bits(min_merkle_tree_root) >= POW_DIFFICULTY) {
         break;
       }
       noise++
@@ -172,99 +171,82 @@ function generateProofwithPow(mixHash, blockHeight,file) {
     return strorage_proof(mixHash, blockHeight, min_index, m_path, min_chunk,noise);
 }
 ```
-应用该机制后，产生存储证明的成本会增加，和我们期望降低公共数据的广泛有效存储的初衷有所背离。而且高度依赖PoW的经济模型可能会让在PoW上用专门硬件建立巨大优势的Supplier破坏基础的博弈可参与性，降低公共数据分布的广泛性。因此我们建议应尽量不要启用PoW机制。
+应用该机制后，产生存储证明的成本会增加，和我们期望降低公共数据的广泛有效存储的初衷有所背离。而且高度依赖该机制的经济模型可能会让在PoW上用专门硬件建立巨大优势的Supplier破坏基础的博弈可参与性，降低公共数据分布的广泛性。因此我们建议应尽量不要启用PoW机制。
 
-### 注意事项与局限性
+### 局限性
 
-1. 最小文件大小问题：基于上述逻辑不适合保存太小的文件，小文件本质上难以防御外部数据源攻击
-2. 不解决数据是否是公共的问题，也不解决数据是否被访问的问题。该证明的存在只是说明该数据的副本是存在的。
+1. 本文讨论的存储证明并不不适合保存太小的文件，小文件本质上难以防御外部数据源攻击。
+2. 公共数据存储证明并不解决数据是否是真正公共的问题，因此在使用时需注意根据场景对MixHash是否是公共的进行验证（这通常并不会很容易）。如果允许Supplier对任意MixHash进行存储证明的提交并获得奖励，那么Supplier一定会构造一个只有自己的拥有的数据，并通过构造攻击来获得奖励。最终导致整个生态的崩溃。
 
-### ERC扩展建议：追踪高价值的数据
+### ERC扩展建议：追踪高价值的公共数据
+我们可以基于EVM现有生态来确认一个MixHash是否是公共数据，并追踪其价值。对于任何与非结构化数据有关的合约，都可以实现接口`ERCPublicDataOwner`，该接口会判断一个确定的MixHash是否与当前合约有关，并尝试返回一个MixHash对应的Owner地址。同时，对于现有，已经广泛认可的NFT生态，我们建议新的ERC-721和ERC-1155的合约可以实现一个新的扩展接口`ERC721MixHashVerfiy`，该接口可以明确的将一个NFT与一个MixHash对应起来。具体的接口定义如下：
 
-```
-//Review:这个作为ERC的一部分，要仔细考虑一下
-interface IERCPublicDataContract {
-    //return the owner of the data
-    function getDataOwner(bytes32 dataHash) external view returns (address);
+```solidity
+/// @title ERCPublicDataOwner Standard, 得到制定MixHash的Owner
+///  Note: the ERC-165 identifier for this interface is <ERC-Number>.
+interface ERCPublicDataOwner {
+    /**
+        @notice Queries Owner of public data determined by Mixhash
+        @param  mixHash    Mixhash you want to query
+        @return            If it is an identified public data, return the Owner address, otherwise 0x0 will be returned
+    */
+    function getPublicDataOwner(bytes32 mixHash) external view returns (address);
 }
 ```
 
-
-```
-interface IERC721VerfiyDataHash{
-    //return token data hash
+The `ERC721MixHashVerfiy` extension is OPTIONAL for ERC-721 smart contracts or ERC-1155 smart contracts. This extension can help establish a relationship between specified NFT and MixHash.
+```solidity
+/// @title ERC721MixHashVerfiy Extension, optional extension
+///  Note: the ERC-165 identifier for this interface is <ERC-Number>.
+interface ERC721MixHashVerfiy{
+    /**
+        @notice Is the tokenId of the NFT is the Mixhash?
+        @return           True if the tokenId is MixHash, false if not
+    */
+    function tokenIdIsMixHash() external view returns (bool); 
+    
+    /**
+        @notice Queries NFT's MixHash
+        @param  _tokenId  NFT to be querying
+        @return           The target NFT corresponds to MixHash, if it is not Mixhash, it returns 0x0
+    */
     function tokenDataHash(uint256 _tokenId) external view returns (bytes32);
 }
 ```
 
-
-
 ## Rationale
 
-<!--
-  The rationale fleshes out the specification by describing what motivated the design and why particular design decisions were made. It should describe alternate designs that were considered and related work, e.g. how the feature is supported in other languages.
+存储证明（又常被称作时空证明）是一个长期受到关注的问题，已经有很多的实现和相关的项目。
 
-  The current placeholder is acceptable for a draft.
-
-  TODO: Remove this comment before submitting
--->
-本问讨论的存储证明的核心是 基于“Nash Consensus” 的博弈性共识，而不是传统的零知识证明性共识。
+1. 和已有的，基于零知识证明的的副本证明的相比，我们的存储证明是基于"Nash Consensus"的，其核心在于:
+  a. 公共网络（链上）并不能对证明的最佳性进行验证，而是依赖经济学博弈。这极大的降低了构造和验证的成本
+  b. 没有价值的数据通常也没有博弈价值，会自然的从系统中淘汰。不承诺虚无缥缈的永久存储。
+2. 能完全通过智能合约实现(目前的参考实现的GAS费有点高)，分离了存储证明和经济模型
+3. 针对公共数据，我们并不严格防御女巫攻击。所谓女巫攻击，是指Supplier利用n个身份，承诺存储n份数据D，而实际上存储小于n份（比如1份），但是却提供了n份存储证明，攻击成功。要严格防范女巫攻击，本质上是在给数据存储附加更多的额外成本。本文的存储证明的核心是通过存储证明和不同经济模型的组合，提高公共数据副本存在的概率，而不是需要严格的定义有多少个副本。因此，站在公共数据存储证明的设计角度，我们不需要防御女巫攻击。
 
 ## Backwards Compatibility
-
-<!--
-
-  This section is optional.
-
-  All EIPs that introduce backwards incompatibilities must include a section describing these incompatibilities and their severity. The EIP must explain how the author proposes to deal with these incompatibilities. EIP submissions without a sufficient backwards compatibility treatise may be rejected outright.
-
-  The current placeholder is acceptable for a draft.
-
-  TODO: Remove this comment before submitting
--->
-
-1. 虽然存储证明的设计是算法性的，架构无关的。但现在的设计考虑了能在主流的L1上实现
-2. 使用HashType来兼容现有的L1，并未未来的扩展留出空间
-3. 目前HashType预留了4种，已经使用了两种。如下表：
-
-
-## Reference Implementation
-
-简单实现
-1. 构造MixHash
-
-2. 生成存储证明
-
-3. 验证存储证明
-
-```solidity
-function verifyDataProof(bytes32 meta) {
-
-}
-
-
-```
-
+使用HashType能让存储证明兼容EVM兼容的公共区块链系统，也能兼容BTC-Like的公共区块链系统。实际上,MixHash可以成为一个新的跨链价值锚定：可以在不同的公共区块链网络里，用不同的模型对MixHash表达同一份数据的价值进行追踪，实现跨链价值的聚合。考虑到目前向下兼容的需要，我们把MixHash的默认HashType设置为了SHA256. HashType还有2类未用，也为未来的扩展留出足够的空间。
 
 
 ## Security Considerations
+本存储证明围绕公共数据展开，在展示存储证明时，常常会把数据的1KB片段发送到公共网络。因此请不要在隐私数据上使用本文设计的存储证明。
 
-<!--
-  All EIPs must contain a section that discusses the security implications/considerations relevant to the proposed change. Include information that might be important for security discussions, surfaces risks and can be used throughout the life cycle of the proposal. For example, include security-relevant design decisions, concerns, important discussions, implementation-specific guidance and pitfalls, an outline of threats and risks and how they are being addressed. EIP submissions missing the "Security Considerations" section will be rejected. An EIP cannot proceed to status "Final" without a Security Considerations discussion deemed sufficient by the reviewers.
+MixHash的设计能够支持隐私文件的存储证明，但需要在原始数据的处理和存储证明的构造上进行一些调整。详细讨论隐私文件的存储证明的设计超出了本文的范畴。实际上Reference Implementation章节里提到的一些项目同时使用了公共数据存储证明和隐私数据存储证明。
 
-  The current placeholder is acceptable for a draft.
+## Test Cases
+PublicDataProofDemo includes test cases written using Hardhat.
 
-  TODO: Remove this comment before submitting
--->
-
-隐私安全
-
-数据可靠性
-
-面向存储证明的场常见攻击
-
-系统的安全边界
+## Reference Implementation
+1. 参考实现
+    - PublicDataProofDemo
+2. 使用了本文设计的项目
+    - DMC公共数据铭文 项目，提供了完整的经济模型
+    
+3. 了解存储证明诞生的背景
+    - DMC Main Chain
+    - CYFS
 
 ## Copyright
 
 Copyright and related rights waived via [CC0](../LICENSE.md).
+
