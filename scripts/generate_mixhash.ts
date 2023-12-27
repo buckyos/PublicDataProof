@@ -2,9 +2,9 @@ import { HashType, MerkleTree } from "./ERCMerkleTree";
 import fs from "node:fs"
 import path from "node:path"
 import { ethers } from "hardhat";
-//import { task } from "hardhat/config";
+export { HashType, MerkleTree } from "./ERCMerkleTree";
 
-function generateMixHash(filePath: string, type: HashType, treeStorePath: string): Uint8Array {
+export function generateMixHash(filePath: string, type: HashType, treeStorePath: string): Uint8Array {
     let file_op = fs.openSync(filePath, "r");
     let length = fs.statSync(filePath).size;
     let buf = new Uint8Array(1024);
@@ -91,4 +91,4 @@ async function run(filepath: string, type: HashType) {
     console.log("root_hash: ", ethers.hexlify(root_hash));
 }
 
-run(test_file_path, hash_type).then(() => {process.exit(0)})
+//run(test_file_path, hash_type).then(() => {process.exit(0)})

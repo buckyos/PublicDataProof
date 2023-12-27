@@ -6,7 +6,7 @@ import path from "node:path"
 import { MerkleTree } from "./ERCMerkleTree";
 import { compareBytes } from "./ERCMerkleTreeUtil";
 
-async function generateProof(filepath: string, nonce_block_height: number, treeStorePath: string, enable_pow: boolean): Promise<[number, Uint8Array | undefined]> {
+export async function generateProof(filepath: string, nonce_block_height: number, treeStorePath: string, enable_pow: boolean): Promise<[number, Uint8Array | undefined]> {
     console.log("loading merkle tree");
     let tree = MerkleTree.load(JSON.parse(fs.readFileSync(treeStorePath, {encoding: 'utf-8'})));
 
@@ -74,4 +74,4 @@ async function main(filepath: string) {
     console.log("min_index:", min_index, "at block", number);
 }
 
-main(test_file_path).then(() => {process.exit(0);});
+// main(test_file_path).then(() => {process.exit(0);});

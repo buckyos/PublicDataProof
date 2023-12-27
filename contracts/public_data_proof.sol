@@ -5,7 +5,7 @@ contract PublicDataProof {
     struct StoargeProof {
         uint256 nonce_block_high;
         uint256 proof_block;
-        uint256 proof_result;
+        bytes32 proof_result;
         address prover;
     }
     mapping(bytes32 => StoargeProof) show_datas;
@@ -15,6 +15,7 @@ contract PublicDataProof {
 
     event ProofReward(address supplier, bytes32 dataMixedHash);
     event ProofPunish(address supplier, bytes32 dataMixedHash);
+    event ShowDataProof(address supplier, bytes32 dataMixedHash, uint256 nonce_block_high, uint32 index_m, bytes32 proof_result);
 
     function showDataProof(bytes32 dataMixedHash, uint256 nonce_block_high,uint32 index_m, bytes16[] calldata m_path, bytes calldata leafdata) public {
         StoargeProof storage last_proof = show_datas[dataMixedHash];
@@ -32,24 +33,26 @@ contract PublicDataProof {
             }
         } 
     
-        require(!is_new_show && last_proof.nonce_block_high == nonce_block_high, "nonce_block_high not match");
+        require(is_new_show || last_proof.nonce_block_high == nonce_block_high, "nonce_block_high not match");
         (bytes32 root_hash,) = _verifyDataProof(dataMixedHash,nonce_block_high,index_m,m_path,leafdata,0);
         
         if(is_new_show) {
             last_proof.nonce_block_high = nonce_block_high;
-            last_proof.proof_result = uint256(root_hash);
+            last_proof.proof_result = root_hash;
             last_proof.proof_block = block.number;
             last_proof.prover = msg.sender;
         } else {
             // 已经有挑战存在：判断是否结果更好，如果更好，更新结果，并更新区块高度
-            if(uint256(root_hash) < last_proof.proof_result) {
+            if(root_hash < last_proof.proof_result) {
                 //根据经济学模型对虚假的proof提供者进行惩罚
                 emit ProofPunish(last_proof.prover,dataMixedHash);
-                last_proof.proof_result = uint256(root_hash);
+                last_proof.proof_result = root_hash;
                 last_proof.proof_block = block.number;
                 last_proof.prover = msg.sender;
             } 
         }
+
+        emit ShowDataProof(msg.sender, dataMixedHash, nonce_block_high, index_m, last_proof.proof_result);
     }
 
     function showStorageProofWihtPoW(bytes32 dataMixedHash, uint256 nonce_block_high,uint32 index_m, bytes16[] calldata m_path, bytes calldata leafdata,bytes32 noise) public {
@@ -72,38 +75,40 @@ contract PublicDataProof {
         require(!is_new_show && last_proof.nonce_block_high == nonce_block_high, "nonce_block_high not match");
         (bytes32 root_hash,bytes32 pow_hash) = _verifyDataProof(dataMixedHash,nonce_block_high,index_m,m_path,leafdata,noise);
         // 判断新的root_hash是否满足pow难度,判断方法为后N个bits是否为0
-        require(uint256(pow_hash) & (1 << POW_DIFFICULTY - 1) == 0, "pow difficulty not match");
+        require(uint256(pow_hash) & ((1 << POW_DIFFICULTY) - 1) == 0, "pow difficulty not match");
         
         if(is_new_show) {
             last_proof.nonce_block_high = nonce_block_high;
-            last_proof.proof_result = uint256(root_hash);
+            last_proof.proof_result = root_hash;
             last_proof.proof_block = block.number;
             last_proof.prover = msg.sender;
         } else {
             // 旧挑战：判断是否结果更好，如果更好，更新结果，并更新区块高度
-            if(uint256(root_hash) < last_proof.proof_result) {
+            if(root_hash < last_proof.proof_result) {
                 //根据经济学模型对虚假的proof提供者进行惩罚
 
                 emit ProofPunish(last_proof.prover,dataMixedHash);
-                last_proof.proof_result = uint256(root_hash);
+                last_proof.proof_result = root_hash;
                 last_proof.proof_block = block.number;
                 last_proof.prover = msg.sender;
             }
         }
+
+        emit ShowDataProof(msg.sender, dataMixedHash, nonce_block_high, index_m, last_proof.proof_result);
     }
 
     function lengthFromMixedHash(bytes32 dataMixedHash) public pure returns (uint64) {
-        return uint64(uint256(dataMixedHash) >> 192 & (1 << 62 - 1));
+        return uint64(uint256(dataMixedHash) >> 192 & ((1 << 62) - 1));
     }
     
-    function _verifyDataProof(bytes32 dataMixedHash,uint256 nonce_block_high, uint32 index, bytes16[] calldata m_path, bytes calldata leafdata,bytes32 noise) private view returns(bytes32,bytes32) {
+    function _verifyDataProof(bytes32 dataMixedHash,uint256 nonce_block_high, uint32 index, bytes16[] calldata m_path, bytes calldata leafdata, bytes32 noise) private view returns(bytes32,bytes32) {
         require(nonce_block_high < block.number, "invalid nonce_block_high");
         require(block.number - nonce_block_high < 256, "nonce block too old");
 
         bytes32 nonce = blockhash(nonce_block_high);
 
         //先验证index落在MixedHash包含的长度范围内
-        require(index < lengthFromMixedHash(dataMixedHash) >> 10 + 1, "invalid index");
+        require(index < (lengthFromMixedHash(dataMixedHash) >> 10) + 1, "invalid index");
 
         //验证leaf_data+index+path 和 dataMixedHash是匹配的,不匹配就revert
         // hash的头2bits表示hash算法，00 = sha256, 10 = keccak256
@@ -121,7 +126,7 @@ contract PublicDataProof {
 
         //验证leaf_data+index+path 和 dataMixedHash是匹配的,不匹配就revert
         // 只比较后192位
-        require(dataHash & bytes32(uint256(1 << 192 - 1)) == dataMixedHash & bytes32(uint256(1 << 192 - 1)), "mixhash mismatch");
+        require(dataHash & bytes32(uint256((1 << 192) - 1)) == dataMixedHash & bytes32(uint256((1 << 192) - 1)), "mixhash mismatch");
 
         // 不需要计算插入位置，只是简单的在Leaf的数据后部和头部插入，也足够满足我们的设计目的了？
         bytes memory new_leafdata;
@@ -181,13 +186,16 @@ contract PublicDataProof {
         bytes16 currentHash = leaf_hash;
         bytes32 computedHash = 0;
         for (uint32 i = 0; i < proof.length; i++) {
-            if (leaf_index % 2 == 0) {
-                computedHash = _efficientKeccak256(currentHash, proof[i]);
-            } else {
-                computedHash = _efficientKeccak256(proof[i], currentHash);
+            if (proof[i] != bytes32(0)) {
+                if (leaf_index % 2 == 0) {
+                    computedHash = _efficientKeccak256(currentHash, proof[i]);
+                } else {
+                    computedHash = _efficientKeccak256(proof[i], currentHash);
+                }
             }
+            
             currentHash = _bytes32To16(computedHash);
-            require(leaf_index >= 2, "invalid leaf_index");
+            //require(leaf_index >= 2, "invalid leaf_index");
             leaf_index = leaf_index / 2;
         }
 
@@ -206,7 +214,7 @@ contract PublicDataProof {
                 computedHash = sha256(bytes.concat(proof[i], currentHash));
             }
             currentHash = _bytes32To16(computedHash);
-            require(leaf_index >= 2, "invalid leaf_index");
+            //require(leaf_index >= 2, "invalid leaf_index");
             leaf_index = leaf_index / 2;
         }
 

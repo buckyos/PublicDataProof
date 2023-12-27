@@ -20,6 +20,8 @@ export interface MerkleTreeData {
     root: string;
 }
 
+const ZERO_BYTES32 = ethers.getBytes(ethers.ZeroHash);
+
 export class MerkleTree {
     private leaf_hash: Uint8Array[] = [];
     private tree: Uint8Array[][] = [];
@@ -70,7 +72,7 @@ export class MerkleTree {
             if (index % 2 == 1) {
                 ret.push(this.tree[layer][index - 1]);
             } else {
-                ret.push(this.tree[layer][index + 1] || new Uint8Array(0));
+                ret.push(this.tree[layer][index + 1] || ZERO_BYTES32);
             }
             index = Math.floor(index / 2);
         }
@@ -94,7 +96,7 @@ export class MerkleTree {
                 currentHash = currentHash.slice(16);
             }
             
-            if (proof[i].length != 0) {
+            if (!equalsBytes(proof[i], ZERO_BYTES32)) {
                 if (leaf_index % 2 == 0) {
                     currentHash = calcHash(new Uint8Array(Buffer.concat([currentHash, proof[i]])), this.type);
                 } else {
