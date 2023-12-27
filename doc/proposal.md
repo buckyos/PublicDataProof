@@ -1,10 +1,10 @@
 ---
 title: ERC-XXXX: MixHash and Public Data Storage Proofs 
 description: A design for minimum value selection Storage Proofs on Merkle trees
-author: waterflier,William,weiqiushi,sisi,
+author: Liu Zhicong(@waterflier), William Entriken (@fulldecent), Wei Qiushi (@weiqiushi),Si Changjun(@photosssa)
 discussions-to: <URL>
 status: Draft
-type: <Standards Track, Meta, or Informational>
+type: Standards Track
 category: ERC # Only required for Standards Track. Otherwise, remove this field.
 created: 2023-12-21
 requires: 165,721,1155 # Only required when you reference an EIP in the `Specification` section. Otherwise, remove this field.
@@ -215,7 +215,7 @@ Applying this mechanism increases the cost of generating storage proofs, which d
 We can use the existing Ethereum ecosystem to confirm whether a MixHash is public data and track its value. For any contracts related to unstructured data, the `ERCPublicDataOwner` interface can be implemented. This interface determines whether a specific MixHash is associated with the current contract and attempts to return an Owner address corresponding to a MixHash. Additionally, for the existing and widely recognized NFT ecosystem, we suggest that new ERC-721 and ERC-1155 contracts implement a new extension interface `ERC721MixHashVerify`. This interface can explicitly associate an NFT with a MixHash. The specific interface definition is as follows:
 
 ```solidity
-/// @title ERCPublicDataOwner Standard, 得到制定MixHash的Owner
+/// @title ERCPublicDataOwner Standard, query Owner of the specified MixHash
 ///  Note: the ERC-165 identifier for this interface is <ERC-Number>.
 interface ERCPublicDataOwner {
     /**
