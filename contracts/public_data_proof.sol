@@ -192,11 +192,10 @@ contract PublicDataProof {
                 } else {
                     computedHash = _efficientKeccak256(proof[i], currentHash);
                 }
+                            
+                currentHash = _bytes32To16(computedHash);
+                leaf_index = leaf_index / 2;
             }
-            
-            currentHash = _bytes32To16(computedHash);
-            //require(leaf_index >= 2, "invalid leaf_index");
-            leaf_index = leaf_index / 2;
         }
 
         return computedHash;
@@ -208,14 +207,15 @@ contract PublicDataProof {
         bytes16 currentHash = leaf_hash;
         bytes32 computedHash = 0;
         for (uint32 i = 0; i < proof.length; i++) {
-            if (leaf_index % 2 == 0) {
-                computedHash = sha256(bytes.concat(currentHash, proof[i]));
-            } else {
-                computedHash = sha256(bytes.concat(proof[i], currentHash));
+            if (proof[i] != bytes32(0)) {
+                if (leaf_index % 2 == 0) {
+                    computedHash = sha256(bytes.concat(currentHash, proof[i]));
+                } else {
+                    computedHash = sha256(bytes.concat(proof[i], currentHash));
+                }
+                currentHash = _bytes32To16(computedHash);
+                leaf_index = leaf_index / 2;
             }
-            currentHash = _bytes32To16(computedHash);
-            //require(leaf_index >= 2, "invalid leaf_index");
-            leaf_index = leaf_index / 2;
         }
 
         return computedHash;
